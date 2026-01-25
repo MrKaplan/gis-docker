@@ -1,239 +1,237 @@
-# 📌 Backlog de Projetos — Stack GIS Docker ARM64
+# 📌 Project Backlog — Docker ARM64 GIS Stack
 
-Este documento reúne ideias de projetos que podem ser desenvolvidos sobre a stack GIS definida para este repositório.
-
-O objetivo do backlog é:
-- servir como referência técnica e conceptual
-- permitir escolher projetos âncora para validação da stack
-- evoluir ideias de forma incremental e reutilizável
-
----
-
-## 1. Monitorização de Cheias e Zonas Inundáveis
-
-**Descrição**  
-Deteção automática de eventos de inundação com base em imagens de satélite e análise temporal.
-
-**Componentes principais**
-- Sentinel-2
-- NDWI
-- Vetorização automática
-- Publicação WebGIS
-
-**Hooks de desenvolvimento**
-- Alertas automáticos por threshold
-- Comparação com histórico de cheias
-- Integração com dados de precipitação
-- Classificação de severidade da cheia
+This document gathers project ideas to be developed upon the GIS stack defined for this repository.
+The goal of this backlog is to:
+* Serve as a technical and conceptual reference
+* Allow the selection of anchor projects to validate the stack
+* Evolve ideas in an incremental and reusable way
 
 ---
 
-## 2. Deteção de Áreas Ardidas
+## 1. Flood & Inundation Zone Monitoring
 
-**Descrição**  
-Identificação e mapeamento de áreas queimadas após incêndios florestais.
+**Description**
+Automatic detection of flood events based on satellite imagery and temporal analysis.
 
-**Componentes principais**
-- Sentinel-2 / Landsat
-- NBR / dNDVI
-- Análise pré e pós-evento
+**Core Components**
+* Sentinel-2
+* NDWI
+* Automatic Vectorization
+* WebGIS Publication
 
-**Hooks de desenvolvimento**
-- Cálculo de severidade do incêndio
-- Integração com histórico multianual
-- Comparação entre incêndios diferentes
-- Base para projetos de regeneração
-
----
-
-## 3. Observatório de Seca Agrícola
-
-**Descrição**  
-Monitorização contínua de stress hídrico em áreas agrícolas.
-
-**Componentes principais**
-- NDVI multitemporal
-- Parcelário agrícola
-- Séries temporais
-
-**Hooks de desenvolvimento**
-- Análise de anomalias face à média histórica
-- Dashboards temporais
-- Comparação entre culturas
-- Sistema de alertas agrícolas
+**Development Hooks**
+* Threshold-based automatic alerts
+* Comparison with historical flood data
+* Integration with precipitation data
+* Flood severity classification
 
 ---
 
-## 4. Ilhas de Calor Urbano
+## 2. Burnt Area Detection
 
-**Descrição**  
-Identificação de zonas urbanas com maior risco térmico através de proxies ambientais.
+**Description**
+Identification and mapping of burnt areas following forest fires.
 
-**Componentes principais**
-- NDVI
-- Uso do solo
-- Opcional: temperatura Landsat
+**Core Components**
+* Sentinel-2 / Landsat
+* NBR / dNDVI
+* Pre- and Post-event analysis
 
-**Hooks de desenvolvimento**
-- Cruzamento com dados socioeconómicos
-- Avaliação de impacto de espaços verdes
-- Apoio a planeamento urbano
-
----
-
-## 5. Walkability Urbana
-
-**Descrição**  
-Avaliação da acessibilidade pedonal e qualidade do espaço urbano.
-
-**Componentes principais**
-- Redes pedonais
-- Isócronas
-- Serviços urbanos
-
-**Hooks de desenvolvimento**
-- Score de walkability por bairro
-- Integração com transporte público
-- Simulação de novos equipamentos
+**Development Hooks**
+* Fire severity calculation
+* Integration with multi-year history
+* Comparison between different fire events
+* Baseline for regeneration projects
 
 ---
 
-## 6. Percursos Pedestres e Cicláveis
+## 3. Agricultural Drought Observatory
 
-**Descrição**  
-Planeamento de rotas otimizadas para mobilidade suave.
+**Description**
+Continuous monitoring of water stress in agricultural areas.
 
-**Componentes principais**
-- Rede viária
-- Declive
-- DEM
+**Core Components**
+* Multitemporal NDVI
+* Agricultural Parcels (Parcelário)
+* Time Series
 
-**Hooks de desenvolvimento**
-- Penalização por inclinação
-- Classificação por nível de esforço
-- Exportação GPX
-
----
-
-## 7. Monitorização de Qualidade da Água (Proxy Remoto)
-
-**Descrição**  
-Deteção de alterações em massas de água com base em índices espectrais.
-
-**Componentes principais**
-- NDWI
-- Séries temporais
-
-**Hooks de desenvolvimento**
-- Deteção de eventos anómalos
-- Comparação entre albufeiras
-- Integração com dados in-situ
+**Development Hooks**
+* Anomaly analysis against historical averages
+* Temporal dashboards
+* Crop comparison
+* Agricultural alert system
 
 ---
 
-## 8. Scraping Ambiental Diário
+## 4. Urban Heat Islands
 
-**Descrição**  
-Recolha automática de dados ambientais externos com armazenamento espacial.
+**Description**
+Identification of urban zones with higher thermal risk using environmental proxies.
 
-**Componentes principais**
-- Cronjobs
-- Python
-- PostGIS temporal
+**Core Components**
+* NDVI
+* Land Use
+* Optional: Landsat Surface Temperature
 
-**Hooks de desenvolvimento**
-- Dashboards simples
-- API pública
-- Correlação com dados de satélite
-
----
-
-## 9. Abandono Agrícola
-
-**Descrição**  
-Identificação de áreas agrícolas com perda progressiva de atividade.
-
-**Componentes principais**
-- NDVI multianual
-- Análise de tendência
-
-**Hooks de desenvolvimento**
-- Classificação por velocidade de abandono
-- Cruzamento com fatores ambientais
-- Apoio a políticas públicas
+**Development Hooks**
+* Cross-referencing with socio-economic data
+* Impact assessment of green spaces
+* Urban planning support
 
 ---
 
-## 10. Atlas Urbano Interativo
+## 5. Urban Walkability
 
-**Descrição**  
-Plataforma WebGIS para visualização de informação urbanística.
+**Description**
+Assessment of pedestrian accessibility and urban space quality.
 
-**Componentes principais**
-- QGIS Server
-- WMS/WFS
-- Camadas oficiais
+**Core Components**
+* Pedestrian networks
+* Isochrones
+* Urban services
 
-**Hooks de desenvolvimento**
-- Ferramentas de consulta avançada
-- Exportação de dados
-- Integração com cadastro
-
----
-
-## 11. Sistema de Alertas Espaciais
-
-**Descrição**  
-Transformação de análises GIS em eventos e alertas.
-
-**Componentes principais**
-- Cronjobs
-- Regras espaciais
-- Base de eventos
-
-**Hooks de desenvolvimento**
-- API de notificações
-- Histórico de alertas
-- Dashboards de eventos
+**Development Hooks**
+* Walkability score by neighborhood
+* Public transport integration
+* New facility simulation
 
 ---
 
-## 12. Regeneração da Vegetação Pós-Incêndio (10 anos)
+## 6. Hiking & Cycling Trails
 
-**Descrição**  
-Análise da recuperação da vegetação ao longo de uma década após incêndios florestais.
+**Description**
+Planning of optimized routes for soft mobility.
 
-**Componentes principais**
-- Sentinel-2 + Landsat
-- NDVI / NBR
-- Séries temporais longas
+**Core Components**
+* Road/Path network
+* Slope / Gradient
+* DEM (Digital Elevation Model)
 
-**Hooks de desenvolvimento**
-- Curvas de recuperação por pixel ou polígono
-- Classificação de dinâmicas de regeneração
-- Tempo até recuperação parcial/completa
-- Cruzamento com declive, solo e exposição
-- Comparação entre diferentes incêndios
-- Slider temporal em WebGIS
+**Development Hooks**
+* Slope penalty algorithms
+* Classification by effort level
+* GPX Export
 
 ---
 
-## 13. GIS as a Service Pessoal
+## 7. Water Quality Monitoring (Remote Proxy)
 
-**Descrição**  
-Uso do stack como plataforma base para múltiplos mini-projetos GIS.
+**Description**
+Detection of changes in water bodies based on spectral indices.
 
-**Componentes principais**
-- Stack Docker reprodutível
-- Projetos isolados por pasta
+**Core Components**
+* NDWI
+* Time Series
 
-**Hooks de desenvolvimento**
-- Templates de projeto
-- Multi-tenant simples
-- Showcase técnico
-- Base para freelancing ou investigação
+**Development Hooks**
+* Anomalous event detection
+* Comparison between reservoirs
+* Integration with in-situ data
 
 ---
 
-> Este backlog é um documento vivo e deve evoluir à medida que a stack e os objetivos do projeto amadurecem.
+## 8. Daily Environmental Scraping
 
+**Description**
+Automatic collection of external environmental data with spatial storage.
+
+**Core Components**
+* Cronjobs
+* Python
+* Temporal PostGIS
+
+**Development Hooks**
+* Simple dashboards
+* Public API
+* Correlation with satellite data
+
+---
+
+## 9. Agricultural Abandonment
+
+**Description**
+Identification of agricultural areas with progressive loss of activity.
+
+**Core Components**
+* Multi-year NDVI
+* Trend analysis
+
+**Development Hooks**
+* Classification by abandonment speed
+* Cross-referencing with environmental factors
+* Support for public policy
+
+---
+
+## 10. Interactive Urban Atlas
+
+**Description**
+WebGIS platform for visualization of urban planning information.
+
+**Core Components**
+* QGIS Server
+* WMS/WFS
+* Official layers
+
+**Development Hooks**
+* Advanced query tools
+* Data export features
+* Cadastre integration
+
+---
+
+## 11. Spatial Alert System
+
+**Description**
+Transformation of GIS analyses into events and alerts.
+
+**Core Components**
+* Cronjobs
+* Spatial rules
+* Event database
+
+**Development Hooks**
+* Notification API
+* Alert history
+* Event dashboards
+
+---
+
+## 12. Post-Fire Vegetation Regeneration (10 Years)
+
+**Description**
+Analysis of vegetation recovery over a decade following forest fires.
+
+**Core Components**
+* Sentinel-2 + Landsat
+* NDVI / NBR
+* Long time series
+
+**Development Hooks**
+* Recovery curves per pixel or polygon
+* Regeneration dynamics classification
+* Time-to-recovery (partial/complete)
+* Cross-referencing with slope, soil, and aspect
+* Comparison between different fires
+* WebGIS Time Slider
+
+---
+
+## 13. Personal GIS as a Service
+
+**Description**
+Using the stack as a base platform for multiple mini GIS projects.
+
+**Core Components**
+* Reproducible Docker Stack
+* Isolated projects by folder
+
+**Development Hooks**
+* Project templates
+* Simple multi-tenancy
+* Technical showcase
+* Base for freelancing or research
+
+---
+
+*This backlog is a living document and should evolve as the stack and project goals mature.*
