@@ -1,12 +1,17 @@
-postgis:
-  image: postgis-arm:latest   # a minha imagem postgis criada
-  container_name: postgis
-  restart: unless-stopped
-  environment:
-    POSTGRES_DB: gis
-    POSTGRES_USER: gis
-    POSTGRES_PASSWORD: gis
-  volumes:
-    - ./data/postgis:/var/lib/postgresql/data
-  networks:
-    - gisnet
+version: "3.9"
+
+services:
+  postgis:
+    image: postgis-arm:latest
+    container_name: postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gis
+      POSTGRES_USER: gis
+      POSTGRES_PASSWORD: gis
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgis:/var/lib/postgresql/data
+gisnet
+
