@@ -3,7 +3,7 @@
 ## 1. Infraestrutura do Projeto
 
 ### 1.1. Base de Hardware e Virtualização
-* **Plataforma:** VM Oracle Cloud Free Tier.
+* **Plataforma:** VM Oracle Cloud Pay as you Go - Configurada para ausência de custos mantendo o uso de recursos dentro dos limites FREE .
 * **Recursos:** Arquitetura ARM64, 2 OCPUs, 12GB RAM.
 * **Armazenamento:** 50GB de disco (expansível até 100GB, se necessário).
 * **Arquitetura de Software:** Stack Docker com múltiplos serviços GIS (um serviço por contentor), incluindo bibliotecas e extensões específicas instaladas nos contentores próprios.
@@ -13,7 +13,7 @@
 * **QGIS Server:** Imagem customizada baseada em Ubuntu.
 * **Martin:** Tile server.
 * **pg_tileserv:** Geração de tiles diretamente a partir do PostGIS.
-* **Python API:** Implementação via FastAPI ou Flask.
+* **Python API:** Implementação via FastAPI (tem melhor performance que Flask).
 * **JupyterLab:** Ambiente para análise de dados e prototipagem.
 * **Cronjobs:** Sistema para automação de tarefas.
 * **Nginx:** Atuando como Reverse Proxy e Webserver (sem recurso a Plesk/Softaculous; possibilidade de alojar WordPress).
@@ -27,6 +27,7 @@
 * **pgRouting:** Extensão do PostGIS para análise de redes (ex: walkability, trails).
 
 ### 1.4. Requisitos de Estrutura e Gestão
+* **Custos:** Total ausência. Uso apenas de software e plataformas free e open source. VM devidamente configurada para evitar surpresas de custos.
 * **Dados:** Partilha de volumes entre serviços.
 * **Logs:** Segregação de logs por cada serviço individual.
 * **Código e Configuração:** Scripts Python, ficheiros de configuração e documentação detalhada do processo de montagem.
@@ -57,5 +58,31 @@
 1.  **Conclusão:** Finalização do projeto, análise ou mapa.
 2.  **LinkedIn:** Publicação de resumo visual (1 a 2 imagens).
 3.  **Blog:** Artigo detalhado com explicação técnica, descrição do processo e resultados.
-4.  **Portfólio:** Entrada com screenshot, link e descrição concisa.
-5.  **WebGIS:** Disponibilização de demonstração interativa (quando aplicável).
+5.  **Portfólio:** Entrada com screenshot, link e descrição concisa.
+6.  **WebGIS:** Disponibilização de demonstração interativa (quando aplicável).
+
+## 3. Considerações
+
+- **Gestão de Recursos (RAM):** Com 12GB de RAM, a margem é confortável. No entanto, o QGIS Server e o JupyterLab podem ser exigentes com a memória durante processos pesados. Recomenda-se monitorizar o uso de RAM caso seja adicionado o GeoServer no futuro, pois corre sobre Java (JVM) e consome bastante.
+
+- **Escolha da API:** Para SIG, recomenda-se o FastAPI. É nativamente assíncrono e lida muito bem com os payloads JSON/GeoJSON que as bibliotecas como o GeoPandas geram.
+
+- **Segurança:** A expor o Nginx, deve ser considerado usar o Certbot num contentor separado (ou via plugin do Nginx) para renovação automática dos certificados Let's Encrypt.
+
+- **Volume de Dados:** Os 50GB iniciais desaparecem rápido com dados Raster (Sentinel/Landsat). Expansão para os 100GB ou usar Object Storage da Oracle para arquivar dados brutos.
+
+- **I/O de Disco:** O armazenamento gratuito da Oracle tem limites de IOPS. Para grandes volumes de dados espaciais, o disco pode tornar-se o principal "gargalo", mais do que o CPU ou RAM.
+
+- **Base de Dados:** Adicionar a extensão pg_cron diretamente no PostGIS permite agendar tarefas de manutenção (VACUUM, refresh de Materialized Views) diretamente no SQL, sem depender apenas do cron do host.
+
+- **Segurança:** Para o Nginx e SSL, Nginx Proxy Manager pode ser uma opção. É leve, corre em Docker, tem interface Web e gere certificados Let's Encrypt automaticamente. Poupa imenso tempo de configuração manual.
+
+- **Orquestração:** Usar Docker Compose Profiles pode ser opção. Como há muitos serviços (Jupyter, Martin, QGIS Server, Nginx), pode ser precisoiniciar apenas o "core" para poupar recursos e levantar o Jupyter apenas quando for para analisar dados.
+  
+- **Automação CI/CD (GitHub Actions):** Atualização automática da VM após cada git push, garantindo que o código novo entra em produção sem intervenção manual e com paragens de apenas alguns segundos.
+
+- **Performance GiST e Cluster:** Uso de índices espaciais GiST e organização física dos dados (CLUSTER) para que os mapas carreguem instantaneamente, poupando o processador e o disco da VM.
+
+- **Tiles Inteligentes (SQL):** Criação de funções no PostGIS que simplificam as geometrias automaticamente conforme o zoom, reduzindo o peso dos dados e acelerando a visualização no browser.
+
+
