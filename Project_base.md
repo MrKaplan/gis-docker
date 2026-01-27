@@ -85,4 +85,10 @@
 
 - **Tiles Inteligentes (SQL):** Criação de funções no PostGIS que simplificam as geometrias automaticamente conforme o zoom, reduzindo o peso dos dados e acelerando a visualização no browser.
 
+- **Orfãos de Conexão:** O PostGIS com FastAPI assíncrono é rápido, mas se não gerires bem o pool de conexões, podes atingir o limite do PostgreSQL rapidamente. O limite é puramente técnico: se esgotares as vagas de ligação do PostgreSQL (100), o sistema bloqueia novos acessos e o teu WebGIS fica offline.
 
+- **Vectores em vez de Rasters:** Sempre que possível, usa MVT (Mapbox Vector Tiles) via Martin. É muito mais leve para o teu hardware do que renderizar imagens via WMS no QGIS Server.
+
+- **Monitorização:** Adiciona um contentor leve como o Netdata ou Portainer para veres em tempo real como a CPU ARM se está a portar com os teus processos Python.
+
+- **Estratégia de Cache:** Como configurar o Nginx para fazer cache de tiles e aliviar o PostGIS.
