@@ -50,7 +50,7 @@ gis-docker/
 ## 2. Estrutura Completa
 
 ```
-gis-docker-stack/
+gis-docker/
 │
 ├── README.md
 ├── LICENSE
@@ -185,12 +185,12 @@ gis-docker-stack/
 │       │   ├── derive_aspect.py
 │       │   ├── derive_twi.py
 │       │   └── derive_all.py            # Deriva todas as camadas de terreno
-│       ├── hydrology/
+│       ├── hydro/
 │       │   ├── flow_direction.py
 │       │   ├── flow_accumulation.py
 │       │   ├── delineate_basins.py
 │       │   └── stream_order.py
-│       └── indices/
+│       └── index/
 │           ├── calc_ndvi.py
 │           ├── calc_ndwi.py
 │           └── calc_nbr.py
@@ -228,111 +228,10 @@ gis-docker-stack/
 │       └── gee_utils.py                 # Utilitários Google Earth Engine
 │
 ├── projects/                            # Projectos de análise individuais
-│   ├── _templates/                      # Templates para novos projectos
-│   │   ├── README.md
-│   │   ├── followup.md                  # Template comunicação pós-projecto
-│   │   └── .gitkeep
-│   │
-│   ├── 00-base-biofisica/               # PROJECTO PRIORITÁRIO
-│   │   ├── README.md
-│   │   ├── followup.md
-│   │   ├── notebooks/
-│   │   │   ├── 01_download_mdt.ipynb
-│   │   │   ├── 02_derive_terrain.ipynb
-│   │   │   ├── 03_derive_hydrology.ipynb
-│   │   │   └── 04_validate.ipynb
-│   │   ├── data/                        # Dados específicos do projecto
-│   │   │   └── .gitkeep
-│   │   ├── outputs/                     # Resultados
-│   │   │   └── .gitkeep
-│   │   └── scripts/                     # Scripts específicos
-│   │       └── .gitkeep
-│   │
-│   ├── area-medio-tejo/                 # Área de estudo principal
-│   │   ├── README.md                    # Descrição da área, justificação
-│   │   ├── dados-base/                  # Dados comuns a todos os projectos
-│   │   │   ├── limites/
-│   │   │   ├── rede-viaria/
-│   │   │   ├── hidrografia/
-│   │   │   └── mdt/
-│   │   └── extent.geojson               # Limites da área de estudo
-│   │
-│   ├── zona-agricola-boquilobo/         # Cluster/Núcleo Agrícola
-│   │   ├── README.md
-│   │   ├── followup.md
-│   │   ├── notebooks/
-│   │   ├── data/
-│   │   └── outputs/
-│   │
-│   ├── zona-hidrica-bacias/             # Cluster/Núcleo Hídrico
-│   │   ├── README.md
-│   │   ├── followup.md
-│   │   ├── notebooks/
-│   │   ├── data/
-│   │   └── outputs/
-│   │
-│   ├── zona-urbana-tomar/               # Cluster/Núcleo Urbano
-│   │   ├── README.md
-│   │   ├── followup.md
-│   │   ├── notebooks/
-│   │   ├── data/
-│   │   └── outputs/
-│   │
-│   ├── zona-carsica-minde/              # Cluster/Núcleo Cársico
-│   │   ├── README.md
-│   │   ├── followup.md
-│   │   ├── notebooks/
-│   │   ├── data/
-│   │   └── outputs/
-│   │
-│   ├── standalone/                      # Projectos independentes
-│   │   ├── polje-minde-storymap/
-│   │   │   ├── README.md
-│   │   │   ├── followup.md
-│   │   │   ├── notebooks/
-│   │   │   ├── data/
-│   │   │   ├── outputs/
-│   │   │   └── storymap/                # Ficheiros do StoryMap
-│   │   │
-│   │   ├── aldeia-xisto-3d/
-│   │   │   ├── README.md
-│   │   │   ├── followup.md
-│   │   │   ├── notebooks/
-│   │   │   ├── data/
-│   │   │   ├── outputs/
-│   │   │   └── models/                  # Ficheiros 3D (STL, OBJ)
-│   │   │
-│   │   ├── villa-romana-3d/
-│   │   │   ├── README.md
-│   │   │   ├── followup.md
-│   │   │   ├── notebooks/
-│   │   │   ├── data/
-│   │   │   └── models/
-│   │   │
-│   │   ├── lixeiras-clandestinas/
-│   │   │   ├── README.md
-│   │   │   ├── followup.md
-│   │   │   ├── notebooks/
-│   │   │   ├── data/
-│   │   │   │   └── field-collection/    # Dados recolhidos no terreno
-│   │   │   └── outputs/
-│   │   │
-│   │   └── gee-timelapses/
-│   │       ├── README.md
-│   │       ├── followup.md
-│   │       ├── notebooks/
-│   │       └── outputs/
-│   │
-│   └── news-on-gis/                     # Projectos reactivos a notícias
-│       ├── README.md                    # Explicação do conceito
-│       ├── _template/
-│       │   ├── README.md
-│       │   └── followup.md
-│       └── YYYY-MM-DD-titulo/           # Formato: data + título curto
-│           ├── README.md
-│           ├── followup.md
-│           ├── notebooks/
-│           └── outputs/
+│   └── _templates/                      # Templates para novos projectos
+│       ├── README.md
+│       ├── followup.md                  # Template comunicação pós-projecto
+│       └── .gitkeep
 │
 ├── www/
 │   ├── landing/                         # Site principal (Hugo único)
