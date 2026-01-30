@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuração
-INPUT_MD="docs/claude/02_ESTRUTURA_PASTAS.md"
+INPUT_MD="docs/claude/02_ESTRUTURA_FICHEIROS.md"
 START_MARKER="## 2. Estrutura Completa"
 
 # Cores para o terminal
