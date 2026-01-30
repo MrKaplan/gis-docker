@@ -7,7 +7,7 @@ INPUT_MD="docs/claude/02_ESTRUTURA_FICHEIROS.md"
 START_MARKER="## 2. Estrutura Completa"
 
 # Mudar para "false" para criar as pastas e ficheiros a sério!
-SIMULACAO=true 
+SIMULACAO=false
 
 # Cores
 GREEN='\033[0;32m'
