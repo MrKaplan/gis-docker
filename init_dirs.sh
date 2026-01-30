@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Configuração - Confirma se o nome do ficheiro está correto!
+# Configuração
 INPUT_MD="docs/claude/02_ESTRUTURA_FICHEIROS.md"
 START_MARKER="## 2. Estrutura Completa"
 
@@ -15,48 +15,53 @@ if [ ! -f "$INPUT_MD" ]; then
     exit 1
 fi
 
-echo -e "🚀 ${CYAN}A processar estrutura a partir de:${NC} $INPUT_MD"
+echo -e "🚀 ${CYAN}A processar estrutura (limpando comentários)...${NC}"
 echo "------------------------------------------------"
 
 criadas=0
 existentes=0
 git_files=0
 
-# Extração melhorada: Pega em tudo o que começa com os caracteres da árvore │ ├ └
-# Independentemente de haver linhas em branco depois.
+# EXTRAÇÃO MELHORADA
+# 1. sed: Isola o bloco da tree
+# 2. sed: Remove tudo o que vem depois de um # (comentários)
+# 3. sed: Limpa os caracteres da árvore
+# 4. grep -v: Remove extensões que não queremos (Dockerfile, .conf, .py, etc)
 items=$(sed -n "/$START_MARKER/,/###/p" "$INPUT_MD" | \
+        sed 's/#.*//' | \
         grep -E '^[│ ├└─]+' | \
         sed -E 's/^[│ ├└─]+//g' | \
         sed 's/^[ \t]*//;s/[ \t]*$//' | \
         grep -v "gis-docker-stack/" | \
-        grep -vE '^\.git($|hub)')
+        grep -vE '\.(conf|sql|txt|yml|example|py|ipynb|pem|log|qgz|geojson|html|js|css|json|toml|yaml|stk|obj|md)$' | \
+        grep -vE '^(Dockerfile|LICENSE|crontab|__init__)$')
 
-# Se a lista continuar vazia, avisa o utilizador
-if [ -z "$items" ]; then
-    echo -e "⚠️  ${YELLOW}Aviso: Não foram detectados itens na árvore. Verifica se o marcador '$START_MARKER' existe no ficheiro.${NC}"
-fi
+# IMPORTANTE: Mudar o separador interno para lidar com nomes de pastas (se existirem espaços)
+IFS=$'\n'
 
 for item in $items; do
     [ -z "$item" ] && continue
 
     # LÓGICA PARA FICHEIROS GIT (.gitkeep / .gitignore)
-    if [[ "$item" == *.* && "$item" != */ ]]; then
-        if [[ "$item" == *".gitkeep"* || "$item" == *".gitignore"* ]]; then
-            parent_dir=$(dirname "$item")
-            mkdir -p "$parent_dir"
-            if [ ! -f "$item" ]; then
-                touch "$item"
-                echo -e "${GREEN}📝 Ficheiro de controlo criado:${NC} $item"
-                ((git_files++))
-            else
-                echo -e "${CYAN}ℹ️  Ficheiro já existe:${NC} $item"
-            fi
+    if [[ "$item" == *".git"* ]]; then
+        parent_dir=$(dirname "$item")
+        mkdir -p "$parent_dir"
+        if [ ! -f "$item" ]; then
+            touch "$item"
+            echo -e "${GREEN}📝 Ficheiro de controlo criado:${NC} $item"
+            ((git_files++))
+        else
+            echo -e "${CYAN}ℹ️  Ficheiro já existe:${NC} $item"
         fi
         continue
     fi
 
-    # LÓGICA PARA PASTAS
+    # LÓGICA PARA PASTAS (Ignora se for um ficheiro sem extensão que sobrou)
     dir=$(echo "$item" | sed 's/\/$//')
+    
+    # Se ainda tiver um ponto e não for git, ignoramos (é ficheiro)
+    [[ "$dir" == *.* && "$dir" != *".git"* ]] && continue
+
     if [ -d "$dir" ]; then
         echo -e "${CYAN}ℹ️  Pasta já existe:${NC} $dir"
         ((existentes++))
