@@ -1,0 +1,1913 @@
+# 18 - SCRIPTS E CONFIGURAÇÕES
+
+Este documento contém todos os ficheiros necessários para montar o stack Docker.
+Cada ficheiro está separado por uma linha de comentários `###############` para facilitar a separação.
+
+---
+
+## Índice
+
+1. [Ficheiros Raiz](#1-ficheiros-raiz)
+2. [Dockerfiles](#2-dockerfiles)
+3. [Configurações](#3-configurações)
+4. [Scripts de Setup](#4-scripts-de-setup)
+5. [Scripts de Cron](#5-scripts-de-cron)
+6. [Scripts Utilitários](#6-scripts-utilitários)
+
+---
+
+## 1. Ficheiros Raiz
+
+###############################################################################
+# FICHEIRO: docker-compose.yml
+# LOCAL: ./docker-compose.yml
+###############################################################################
+
+version: '3.8'
+
+services:
+  # ===========================================
+  # POSTGIS - Base de dados espacial
+  # ===========================================
+  postgis:
+    build:
+      context: ./dockerfiles/postgis
+      dockerfile: Dockerfile
+    container_name: gis-postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gisuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gispass}
+      POSTGRES_DB: ${POSTGRES_DB:-gisdb}
+    volumes:
+      - ./data/postgis:/var/lib/postgresql/data
+      - ./logs/postgis:/var/log/postgresql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gisuser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles: ["core", "full"]
+
+  # ===========================================
+  # NGINX - Reverse proxy + SSL
+  # ===========================================
+  nginx:
+    image: nginx:alpine
+    container_name: gis-nginx
+    restart: unless-stopped
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/sites-available:/etc/nginx/sites-available:ro
+      - ./config/nginx/snippets:/etc/nginx/snippets:ro
+      - ./certs/nginx:/etc/nginx/certs:ro
+      - ./www:/var/www:ro
+      - ./logs/nginx:/var/log/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - postgis
+    profiles: ["core", "full"]
+
+  # ===========================================
+  # MARTIN - Vector tiles
+  # ===========================================
+  martin:
+    image: ghcr.io/maplibre/martin:latest
+    container_name: gis-martin
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-gisuser}:${POSTGRES_PASSWORD:-gispass}@postgis:5432/${POSTGRES_DB:-gisdb}
+    volumes:
+      - ./config/martin/config.yaml:/config.yaml:ro
+    command: --config /config.yaml
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    profiles: ["core", "full"]
+
+  # ===========================================
+  # TITILER - Raster tiles COG/STAC
+  # ===========================================
+  titiler:
+    build:
+      context: ./dockerfiles/titiler
+      dockerfile: Dockerfile
+    container_name: gis-titiler
+    restart: unless-stopped
+    environment:
+      - TITILER_API_CORS_ORIGINS=*
+      - CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.TIF,.tiff,.TIFF
+    volumes:
+      - ./data/shared/raster:/data/raster:ro
+      - ./logs/titiler:/var/log/titiler
+    ports:
+      - "8000:8000"
+    profiles: ["full", "raster"]
+
+  # ===========================================
+  # QGIS SERVER - WMS/WFS/WCS
+  # ===========================================
+  qgis-server:
+    build:
+      context: ./dockerfiles/qgis-server
+      dockerfile: Dockerfile
+    container_name: gis-qgis-server
+    restart: unless-stopped
+    environment:
+      - QGIS_SERVER_LOG_LEVEL=0
+      - QGIS_SERVER_LOG_FILE=/var/log/qgis/qgis_server.log
+      - MAX_CACHE_LAYERS=100
+    volumes:
+      - ./data/qgis/projects:/data/projects:ro
+      - ./logs/qgis:/var/log/qgis
+    ports:
+      - "5555:5555"
+    profiles: ["full", "wms"]
+
+  # ===========================================
+  # PYTHON API - FastAPI custom
+  # ===========================================
+  python-api:
+    build:
+      context: ./dockerfiles/python-api
+      dockerfile: Dockerfile
+    container_name: gis-python-api
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER:-gisuser}:${POSTGRES_PASSWORD:-gispass}@postgis:5432/${POSTGRES_DB:-gisdb}
+      - API_SECRET_KEY=${API_SECRET_KEY:-changeme}
+    volumes:
+      - ./src/api:/app
+      - ./data/shared:/data:ro
+      - ./logs/python:/var/log/api
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    profiles: ["core", "full"]
+
+  # ===========================================
+  # JUPYTER - Análise e prototipagem
+  # ===========================================
+  jupyter:
+    build:
+      context: ./dockerfiles/jupyter
+      dockerfile: Dockerfile
+    container_name: gis-jupyter
+    restart: unless-stopped
+    environment:
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-gistoken}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-gisuser}:${POSTGRES_PASSWORD:-gispass}@postgis:5432/${POSTGRES_DB:-gisdb}
+    volumes:
+      - ./data/jupyter/notebooks:/home/jovyan/notebooks
+      - ./data/shared:/home/jovyan/data
+      - ./projects:/home/jovyan/projects
+      - ./src:/home/jovyan/src:ro
+    ports:
+      - "8888:8888"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    profiles: ["dev", "analysis"]
+
+  # ===========================================
+  # CRON - Tarefas agendadas
+  # ===========================================
+  cron:
+    build:
+      context: ./dockerfiles/cron
+      dockerfile: Dockerfile
+    container_name: gis-cron
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER:-gisuser}:${POSTGRES_PASSWORD:-gispass}@postgis:5432/${POSTGRES_DB:-gisdb}
+    volumes:
+      - ./scripts/cronjobs:/scripts:ro
+      - ./data/shared:/data
+      - ./logs/cron:/var/log/cron
+    depends_on:
+      postgis:
+        condition: service_healthy
+    profiles: ["full", "automation"]
+
+  # ===========================================
+  # REDIS - Cache (opcional)
+  # ===========================================
+  redis:
+    image: redis:alpine
+    container_name: gis-redis
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+      - ./config/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "6379:6379"
+    profiles: ["full", "cache"]
+
+  # ===========================================
+  # PG-TILESERV - Vector tiles alternativo (opcional)
+  # ===========================================
+  pg-tileserv:
+    image: pramsey/pg_tileserv:latest
+    container_name: gis-pg-tileserv
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER:-gisuser}:${POSTGRES_PASSWORD:-gispass}@postgis:5432/${POSTGRES_DB:-gisdb}
+    ports:
+      - "7800:7800"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    profiles: ["full", "tiles"]
+
+volumes:
+  postgis_data:
+  redis_data:
+
+networks:
+  default:
+    name: gis-network
+
+
+###############################################################################
+# FICHEIRO: .env.example
+# LOCAL: ./.env.example
+###############################################################################
+
+# ===========================================
+# PostgreSQL / PostGIS
+# ===========================================
+POSTGRES_USER=gisuser
+POSTGRES_PASSWORD=changeme_strong_password
+POSTGRES_DB=gisdb
+
+# ===========================================
+# Domínio e SSL
+# ===========================================
+DOMAIN=meudominio.pt
+ACME_EMAIL=email@meudominio.pt
+
+# ===========================================
+# API
+# ===========================================
+API_SECRET_KEY=changeme_random_string_here
+
+# ===========================================
+# Jupyter
+# ===========================================
+JUPYTER_TOKEN=changeme_jupyter_token
+
+# ===========================================
+# Google Earth Engine (opcional)
+# ===========================================
+GEE_SERVICE_ACCOUNT=
+GEE_PRIVATE_KEY_PATH=
+
+# ===========================================
+# Paths (geralmente não precisam de alterar)
+# ===========================================
+DATA_PATH=/data
+LOGS_PATH=/var/log
+
+
+###############################################################################
+# FICHEIRO: .gitignore
+# LOCAL: ./.gitignore
+###############################################################################
+
+# ===========================================
+# Ambiente e Secrets
+# ===========================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+!certs/**/.gitkeep
+
+# ===========================================
+# Dados (demasiado grandes)
+# ===========================================
+data/postgis/*
+!data/postgis/.gitkeep
+
+data/redis/*
+!data/redis/.gitkeep
+
+data/shared/raster/*
+!data/shared/raster/.gitkeep
+!data/shared/raster/mdt/.gitkeep
+!data/shared/raster/indices/.gitkeep
+!data/shared/raster/outputs/.gitkeep
+
+data/shared/vector/*
+!data/shared/vector/.gitkeep
+!data/shared/vector/base/.gitkeep
+!data/shared/vector/derived/.gitkeep
+!data/shared/vector/outputs/.gitkeep
+
+data/shared/downloads/*
+!data/shared/downloads/.gitkeep
+
+data/shared/temp/*
+!data/shared/temp/.gitkeep
+
+# ===========================================
+# Logs
+# ===========================================
+logs/**/*.log
+logs/**/*.gz
+!logs/.gitkeep
+!logs/**/.gitkeep
+
+# ===========================================
+# Python
+# ===========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+.eggs/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ===========================================
+# Jupyter
+# ===========================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ===========================================
+# IDE
+# ===========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ===========================================
+# OS
+# ===========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===========================================
+# Outputs grandes
+# ===========================================
+*.tif
+*.tiff
+*.gpkg
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.geojson
+!projects/**/config/*.geojson
+!projects/**/outputs/.gitkeep
+
+# ===========================================
+# Modelos 3D
+# ===========================================
+*.stl
+*.obj
+*.fbx
+*.gltf
+*.glb
+
+# ===========================================
+# Hugo
+# ===========================================
+www/landing/public/
+www/landing/resources/
+www/landing/.hugo_build.lock
+
+# ===========================================
+# Node (se usado em WebGIS)
+# ===========================================
+node_modules/
+package-lock.json
+
+# ===========================================
+# Certificados
+# ===========================================
+certs/**/*.pem
+certs/**/*.key
+certs/**/*.crt
+!certs/**/.gitkeep
+
+
+---
+
+## 2. Dockerfiles
+
+###############################################################################
+# FICHEIRO: Dockerfile (PostGIS)
+# LOCAL: ./dockerfiles/postgis/Dockerfile
+###############################################################################
+
+FROM postgres:16
+
+LABEL maintainer="GIS Stack"
+LABEL description="PostgreSQL 16 + PostGIS 3.4 + pgRouting + pg_cron"
+
+# Instalar PostGIS e extensões
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-16-postgis-3 \
+    postgresql-16-postgis-3-scripts \
+    postgresql-16-pgrouting \
+    postgresql-16-cron \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar script de inicialização
+COPY init-extensions.sql /docker-entrypoint-initdb.d/
+
+# Configuração de log
+RUN mkdir -p /var/log/postgresql && chown postgres:postgres /var/log/postgresql
+
+EXPOSE 5432
+
+
+###############################################################################
+# FICHEIRO: init-extensions.sql (PostGIS)
+# LOCAL: ./dockerfiles/postgis/init-extensions.sql
+###############################################################################
+
+-- Criar extensões necessárias
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_raster;
+CREATE EXTENSION IF NOT EXISTS postgis_topology;
+CREATE EXTENSION IF NOT EXISTS pgrouting;
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+-- Criar schemas para organização
+CREATE SCHEMA IF NOT EXISTS raster;
+CREATE SCHEMA IF NOT EXISTS vector;
+CREATE SCHEMA IF NOT EXISTS analysis;
+CREATE SCHEMA IF NOT EXISTS tiles;
+
+-- Comentários
+COMMENT ON SCHEMA raster IS 'Dados raster e derivados';
+COMMENT ON SCHEMA vector IS 'Dados vectoriais base e derivados';
+COMMENT ON SCHEMA analysis IS 'Resultados de análises';
+COMMENT ON SCHEMA tiles IS 'Views e funções para tiles';
+
+-- Configurar pg_cron
+ALTER SYSTEM SET cron.database_name = 'gisdb';
+
+
+###############################################################################
+# FICHEIRO: Dockerfile (QGIS Server)
+# LOCAL: ./dockerfiles/qgis-server/Dockerfile
+###############################################################################
+
+FROM ubuntu:24.04
+
+LABEL maintainer="GIS Stack"
+LABEL description="QGIS Server 3.34 LTR para ARM64"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV QGIS_SERVER_LOG_LEVEL=0
+ENV QGIS_SERVER_LOG_FILE=/var/log/qgis/qgis_server.log
+
+# Adicionar repositório QGIS
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gnupg \
+    software-properties-common \
+    wget \
+    && wget -qO - https://qgis.org/downloads/qgis-2022.gpg.key | gpg --no-default-keyring --keyring gnupg-ring:/etc/apt/trusted.gpg.d/qgis-archive.gpg --import \
+    && chmod a+r /etc/apt/trusted.gpg.d/qgis-archive.gpg \
+    && add-apt-repository "deb https://qgis.org/ubuntu-ltr $(lsb_release -cs) main"
+
+# Instalar QGIS Server
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    qgis-server \
+    spawn-fcgi \
+    fcgiwrap \
+    && rm -rf /var/lib/apt/lists/*
+
+# Criar directórios
+RUN mkdir -p /var/log/qgis /data/projects \
+    && chown -R www-data:www-data /var/log/qgis /data/projects
+
+# Script de entrada
+COPY spawn-fcgi.conf /etc/default/spawn-fcgi
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 5555
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+
+###############################################################################
+# FICHEIRO: spawn-fcgi.conf (QGIS Server)
+# LOCAL: ./dockerfiles/qgis-server/spawn-fcgi.conf
+###############################################################################
+
+FCGI_APP=/usr/lib/cgi-bin/qgis_mapserv.fcgi
+FCGI_SOCKET=/var/run/qgis-server.sock
+FCGI_USER=www-data
+FCGI_GROUP=www-data
+FCGI_CHILDREN=4
+
+
+###############################################################################
+# FICHEIRO: entrypoint.sh (QGIS Server)
+# LOCAL: ./dockerfiles/qgis-server/entrypoint.sh
+###############################################################################
+
+#!/bin/bash
+set -e
+
+# Criar socket directory
+mkdir -p /var/run
+
+# Iniciar spawn-fcgi
+spawn-fcgi \
+    -s /var/run/qgis-server.sock \
+    -U www-data \
+    -G www-data \
+    -n \
+    -P /var/run/qgis-server.pid \
+    -- /usr/lib/cgi-bin/qgis_mapserv.fcgi &
+
+# Manter container a correr e expor via socat
+apt-get update && apt-get install -y socat > /dev/null 2>&1 || true
+socat TCP-LISTEN:5555,fork,reuseaddr UNIX-CONNECT:/var/run/qgis-server.sock
+
+
+###############################################################################
+# FICHEIRO: Dockerfile (Python API)
+# LOCAL: ./dockerfiles/python-api/Dockerfile
+###############################################################################
+
+FROM python:3.12-slim
+
+LABEL maintainer="GIS Stack"
+LABEL description="FastAPI + GDAL + bibliotecas GIS"
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Instalar dependências de sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gdal-bin \
+    libgdal-dev \
+    libgeos-dev \
+    libproj-dev \
+    libspatialindex-dev \
+    build-essential \
+    libpq-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Definir variáveis GDAL
+ENV GDAL_CONFIG=/usr/bin/gdal-config
+ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
+ENV C_INCLUDE_PATH=/usr/include/gdal
+
+# Criar directório de trabalho
+WORKDIR /app
+
+# Copiar e instalar dependências Python
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Criar directório de logs
+RUN mkdir -p /var/log/api
+
+# Expor porta
+EXPOSE 8080
+
+# Comando de arranque
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
+
+
+###############################################################################
+# FICHEIRO: requirements.txt (Python API)
+# LOCAL: ./dockerfiles/python-api/requirements.txt
+###############################################################################
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+asyncpg>=0.29.0
+geoalchemy2>=0.14.0
+
+# GIS
+gdal>=3.8.0
+rasterio>=1.3.9
+fiona>=1.9.5
+shapely>=2.0.2
+pyproj>=3.6.1
+geopandas>=0.14.2
+
+# Analysis
+numpy>=1.26.0
+pandas>=2.1.0
+scipy>=1.12.0
+scikit-learn>=1.4.0
+
+# Raster processing
+richdem>=2.3.0
+pysheds>=0.3.5
+
+# STAC/COG
+pystac-client>=0.7.0
+rio-cogeo>=5.0.0
+
+# Utils
+python-dotenv>=1.0.0
+httpx>=0.26.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Logging
+loguru>=0.7.0
+
+
+###############################################################################
+# FICHEIRO: Dockerfile (TiTiler)
+# LOCAL: ./dockerfiles/titiler/Dockerfile
+###############################################################################
+
+FROM python:3.12-slim
+
+LABEL maintainer="GIS Stack"
+LABEL description="TiTiler para servir COG/STAC"
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Instalar dependências de sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgdal-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Criar directório de logs
+RUN mkdir -p /var/log/titiler
+
+EXPOSE 8000
+
+CMD ["uvicorn", "titiler.application.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+
+###############################################################################
+# FICHEIRO: requirements.txt (TiTiler)
+# LOCAL: ./dockerfiles/titiler/requirements.txt
+###############################################################################
+
+titiler.core>=0.15.0
+titiler.extensions>=0.15.0
+titiler.mosaic>=0.15.0
+titiler.application>=0.15.0
+rio-cogeo>=5.0.0
+rio-tiler>=6.2.0
+starlette>=0.32.0
+uvicorn[standard]>=0.27.0
+
+
+###############################################################################
+# FICHEIRO: Dockerfile (Jupyter)
+# LOCAL: ./dockerfiles/jupyter/Dockerfile
+###############################################################################
+
+FROM jupyter/minimal-notebook:latest
+
+LABEL maintainer="GIS Stack"
+LABEL description="JupyterLab com stack GIS completo"
+
+USER root
+
+# Instalar dependências de sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gdal-bin \
+    libgdal-dev \
+    libgeos-dev \
+    libproj-dev \
+    libspatialindex-dev \
+    build-essential \
+    libpq-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+USER ${NB_UID}
+
+# Copiar e instalar dependências Python
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Instalar extensões Jupyter
+RUN pip install --no-cache-dir \
+    jupyterlab-git \
+    jupyterlab-lsp \
+    python-lsp-server
+
+EXPOSE 8888
+
+
+###############################################################################
+# FICHEIRO: requirements.txt (Jupyter)
+# LOCAL: ./dockerfiles/jupyter/requirements.txt
+###############################################################################
+
+# GIS Core
+gdal>=3.8.0
+rasterio>=1.3.9
+fiona>=1.9.5
+shapely>=2.0.2
+pyproj>=3.6.1
+geopandas>=0.14.2
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+geoalchemy2>=0.14.0
+
+# Analysis
+numpy>=1.26.0
+pandas>=2.1.0
+scipy>=1.12.0
+scikit-learn>=1.4.0
+
+# Raster processing
+richdem>=2.3.0
+pysheds>=0.3.5
+xarray>=2024.1.0
+rioxarray>=0.15.0
+
+# Remote Sensing
+earthengine-api>=0.1.390
+pystac-client>=0.7.0
+rio-cogeo>=5.0.0
+
+# Visualization
+matplotlib>=3.8.0
+seaborn>=0.13.0
+plotly>=5.18.0
+folium>=0.15.0
+leafmap>=0.30.0
+ipywidgets>=8.1.0
+ipyleaflet>=0.18.0
+
+# Utils
+python-dotenv>=1.0.0
+httpx>=0.26.0
+tqdm>=4.66.0
+loguru>=0.7.0
+
+
+###############################################################################
+# FICHEIRO: Dockerfile (Cron)
+# LOCAL: ./dockerfiles/cron/Dockerfile
+###############################################################################
+
+FROM python:3.12-alpine
+
+LABEL maintainer="GIS Stack"
+LABEL description="Container para tarefas agendadas"
+
+# Instalar cron e dependências
+RUN apk add --no-cache \
+    dcron \
+    libpq \
+    gdal \
+    geos \
+    proj \
+    && pip install --no-cache-dir \
+    psycopg2-binary \
+    httpx \
+    python-dotenv \
+    loguru
+
+# Criar directórios
+RUN mkdir -p /scripts /var/log/cron
+
+# Copiar crontab
+COPY crontab /etc/crontabs/root
+
+# Copiar requirements e instalar
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Script de entrada
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+
+###############################################################################
+# FICHEIRO: crontab (Cron)
+# LOCAL: ./dockerfiles/cron/crontab
+###############################################################################
+
+# Formato: minuto hora dia mês dia_semana comando
+
+# ===== SCRAPING =====
+# IPMA - meteorologia (a cada 6 horas)
+0 */6 * * * /usr/local/bin/python /scripts/scraping/ipma_weather.py >> /var/log/cron/ipma.log 2>&1
+
+# SNIRH - níveis albufeiras (diário às 7h)
+0 7 * * * /usr/local/bin/python /scripts/scraping/snirh_reservoirs.py >> /var/log/cron/snirh.log 2>&1
+
+# ===== PROCESSAMENTO =====
+# NDVI batch (semanal, domingo às 3h)
+0 3 * * 0 /usr/local/bin/python /scripts/processing/ndvi_batch.py >> /var/log/cron/ndvi.log 2>&1
+
+# ===== MANUTENÇÃO =====
+# Limpeza de ficheiros temporários (diário às 4h)
+0 4 * * * /scripts/utils/cleanup_temp.sh >> /var/log/cron/cleanup.log 2>&1
+
+# VACUUM da base de dados (semanal, sábado às 2h)
+0 2 * * 6 /usr/local/bin/python /scripts/utils/vacuum_db.py >> /var/log/cron/vacuum.log 2>&1
+
+# Rotação de logs (mensal, dia 1 às 1h)
+0 1 1 * * /scripts/utils/rotate_logs.sh >> /var/log/cron/rotate.log 2>&1
+
+
+###############################################################################
+# FICHEIRO: requirements.txt (Cron)
+# LOCAL: ./dockerfiles/cron/requirements.txt
+###############################################################################
+
+psycopg2-binary>=2.9.9
+httpx>=0.26.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+pandas>=2.1.0
+beautifulsoup4>=4.12.0
+lxml>=5.1.0
+
+
+###############################################################################
+# FICHEIRO: entrypoint.sh (Cron)
+# LOCAL: ./dockerfiles/cron/entrypoint.sh
+###############################################################################
+
+#!/bin/sh
+set -e
+
+# Exportar variáveis de ambiente para o cron
+printenv | grep -E '^(DATABASE_URL|POSTGRES_|API_)' >> /etc/environment
+
+# Iniciar cron em foreground
+echo "Iniciando cron daemon..."
+crond -f -l 2
+
+
+---
+
+## 3. Configurações
+
+###############################################################################
+# FICHEIRO: nginx.conf
+# LOCAL: ./config/nginx/nginx.conf
+###############################################################################
+
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+
+    # Gzip
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml application/json application/javascript 
+               application/xml application/xml+rss text/javascript application/geo+json;
+
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+    limit_req_zone $binary_remote_addr zone=tiles:10m rate=50r/s;
+
+    # Inclui sites
+    include /etc/nginx/sites-available/*.conf;
+}
+
+
+###############################################################################
+# FICHEIRO: default.conf (Nginx)
+# LOCAL: ./config/nginx/sites-available/default.conf
+###############################################################################
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+
+# Main HTTPS server
+server {
+    listen 443 ssl http2;
+    server_name meudominio.pt;
+
+    # SSL
+    include /etc/nginx/snippets/ssl.conf;
+
+    # Security headers
+    include /etc/nginx/snippets/security-headers.conf;
+
+    # ===========================================
+    # Site principal (Hugo)
+    # ===========================================
+    location / {
+        root /var/www/landing/public;
+        index index.html;
+        try_files $uri $uri/ =404;
+
+        # Cache para assets estáticos
+        location ~* \.(css|js|jpg|jpeg|png|gif|ico|svg|woff|woff2)$ {
+            expires 30d;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+
+    # ===========================================
+    # WebGIS
+    # ===========================================
+    location /webgis {
+        alias /var/www/webgis;
+        try_files $uri $uri/ =404;
+    }
+
+    # ===========================================
+    # API (FastAPI)
+    # ===========================================
+    location /api {
+        limit_req zone=api burst=20 nodelay;
+        
+        proxy_pass http://python-api:8080;
+        include /etc/nginx/snippets/proxy-params.conf;
+    }
+
+    # ===========================================
+    # Vector Tiles (Martin)
+    # ===========================================
+    location /tiles {
+        limit_req zone=tiles burst=100 nodelay;
+        
+        proxy_pass http://martin:3000;
+        include /etc/nginx/snippets/proxy-params.conf;
+        include /etc/nginx/snippets/cache-tiles.conf;
+    }
+
+    # ===========================================
+    # Raster Tiles (TiTiler)
+    # ===========================================
+    location /cog {
+        proxy_pass http://titiler:8000;
+        include /etc/nginx/snippets/proxy-params.conf;
+        include /etc/nginx/snippets/cache-tiles.conf;
+    }
+
+    # ===========================================
+    # WMS/WFS (QGIS Server)
+    # ===========================================
+    location /wms {
+        proxy_pass http://qgis-server:5555;
+        include /etc/nginx/snippets/proxy-params.conf;
+    }
+
+    location /wfs {
+        proxy_pass http://qgis-server:5555;
+        include /etc/nginx/snippets/proxy-params.conf;
+    }
+
+    # ===========================================
+    # Jupyter (apenas em dev)
+    # ===========================================
+    location /jupyter {
+        proxy_pass http://jupyter:8888;
+        include /etc/nginx/snippets/proxy-params.conf;
+        
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+
+###############################################################################
+# FICHEIRO: ssl.conf (Nginx snippet)
+# LOCAL: ./config/nginx/snippets/ssl.conf
+###############################################################################
+
+ssl_certificate /etc/nginx/certs/fullchain.pem;
+ssl_certificate_key /etc/nginx/certs/privkey.pem;
+
+ssl_session_timeout 1d;
+ssl_session_cache shared:SSL:50m;
+ssl_session_tickets off;
+
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+ssl_prefer_server_ciphers off;
+
+# HSTS
+add_header Strict-Transport-Security "max-age=63072000" always;
+
+# OCSP Stapling
+ssl_stapling on;
+ssl_stapling_verify on;
+
+
+###############################################################################
+# FICHEIRO: security-headers.conf (Nginx snippet)
+# LOCAL: ./config/nginx/snippets/security-headers.conf
+###############################################################################
+
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-XSS-Protection "1; mode=block" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https:;" always;
+
+
+###############################################################################
+# FICHEIRO: proxy-params.conf (Nginx snippet)
+# LOCAL: ./config/nginx/snippets/proxy-params.conf
+###############################################################################
+
+proxy_http_version 1.1;
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host;
+proxy_set_header X-Forwarded-Port $server_port;
+
+proxy_connect_timeout 60s;
+proxy_send_timeout 60s;
+proxy_read_timeout 60s;
+
+proxy_buffering on;
+proxy_buffer_size 4k;
+proxy_buffers 8 4k;
+
+
+###############################################################################
+# FICHEIRO: cache-tiles.conf (Nginx snippet)
+# LOCAL: ./config/nginx/snippets/cache-tiles.conf
+###############################################################################
+
+# Cache para tiles
+proxy_cache_path /var/cache/nginx/tiles levels=1:2 keys_zone=tiles_cache:10m max_size=1g inactive=60m use_temp_path=off;
+
+proxy_cache tiles_cache;
+proxy_cache_valid 200 60m;
+proxy_cache_valid 404 1m;
+proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+proxy_cache_lock on;
+
+add_header X-Cache-Status $upstream_cache_status;
+
+
+###############################################################################
+# FICHEIRO: config.yaml (Martin)
+# LOCAL: ./config/martin/config.yaml
+###############################################################################
+
+# Conexão à base de dados (usa variável de ambiente)
+connection_string: ${DATABASE_URL}
+
+# Auto-publicar tabelas com geometria
+tables:
+  auto_publish: true
+  
+  # Configurações por schema
+  schemas:
+    vector:
+      auto_publish: true
+    tiles:
+      auto_publish: true
+    analysis:
+      auto_publish: false
+
+# Auto-publicar funções SQL que retornam tiles
+functions:
+  auto_publish: true
+
+# Configurações de cache
+cache:
+  max_size: 512  # MB
+
+# Configurações do servidor
+server:
+  listen_addresses: 0.0.0.0:3000
+
+
+###############################################################################
+# FICHEIRO: postgresql.conf (PostGIS tuning)
+# LOCAL: ./config/postgis/postgresql.conf
+###############################################################################
+
+# ===========================================
+# Configuração optimizada para 12GB RAM total
+# (assumindo ~4GB para PostgreSQL)
+# ===========================================
+
+# Memória
+shared_buffers = 2GB
+effective_cache_size = 6GB
+work_mem = 256MB
+maintenance_work_mem = 512MB
+
+# Checkpoints
+checkpoint_completion_target = 0.9
+wal_buffers = 64MB
+min_wal_size = 1GB
+max_wal_size = 4GB
+
+# Planner
+random_page_cost = 1.1
+effective_io_concurrency = 200
+default_statistics_target = 100
+
+# Conexões
+max_connections = 100
+
+# Logging
+log_destination = 'stderr'
+logging_collector = on
+log_directory = '/var/log/postgresql'
+log_filename = 'postgresql-%Y-%m-%d.log'
+log_rotation_age = 1d
+log_rotation_size = 100MB
+log_min_duration_statement = 1000  # Log queries > 1s
+
+# PostGIS
+shared_preload_libraries = 'pg_cron'
+
+
+###############################################################################
+# FICHEIRO: pg_hba.conf (PostGIS auth)
+# LOCAL: ./config/postgis/pg_hba.conf
+###############################################################################
+
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+# Local connections
+local   all             all                                     trust
+
+# Docker network
+host    all             all             172.16.0.0/12           md5
+host    all             all             192.168.0.0/16          md5
+
+# Rejeitar tudo o resto
+host    all             all             0.0.0.0/0               reject
+
+
+###############################################################################
+# FICHEIRO: redis.conf
+# LOCAL: ./config/redis/redis.conf
+###############################################################################
+
+# Bind
+bind 0.0.0.0
+
+# Porta
+port 6379
+
+# Memória máxima (256MB)
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+
+# Persistência (desactivada para cache puro)
+save ""
+appendonly no
+
+# Logging
+loglevel notice
+logfile ""
+
+
+---
+
+## 4. Scripts de Setup
+
+###############################################################################
+# FICHEIRO: init-dirs.sh
+# LOCAL: ./scripts/setup/init-dirs.sh
+###############################################################################
+
+#!/bin/bash
+# ===========================================
+# Criar estrutura de directórios do projecto com Verificação
+# ===========================================
+
+set -e
+
+# Contadores para o resumo
+criadas=0
+existentes=0
+
+echo "🚀 Verificando e criando estrutura de directórios..."
+
+# Lista de directórios a garantir
+DIRECTORIES=(
+    "config/nginx/sites-available"
+    "config/nginx/snippets"
+    "config/postgis"
+    "config/qgis-server"
+    "config/martin"
+    "config/pg-tileserv"
+    "config/titiler"
+    "config/redis"
+    "certs/nginx"
+    "data/postgis"
+    "data/redis"
+    "data/qgis/projects"
+    "data/jupyter/notebooks"
+    "data/shared/raster/mdt"
+    "data/shared/raster/indices"
+    "data/shared/raster/outputs"
+    "data/shared/vector/base"
+    "data/shared/vector/derived"
+    "data/shared/vector/outputs"
+    "data/shared/downloads"
+    "data/shared/temp"
+    "dockerfiles/postgis"
+    "dockerfiles/qgis-server"
+    "dockerfiles/python-api"
+    "dockerfiles/jupyter"
+    "dockerfiles/titiler"
+    "dockerfiles/cron"
+    "docs/claude"
+    "logs/nginx"
+    "logs/postgis"
+    "logs/qgis"
+    "logs/python"
+    "logs/cron"
+    "logs/titiler"
+    "logs/martin"
+    "projects"
+    "scripts/setup"
+    "scripts/cronjobs/scraping"
+    "scripts/cronjobs/processing"
+    "scripts/utils"
+    "scripts/analysis/terrain"
+    "scripts/analysis/hydrology"
+    "scripts/analysis/indices"
+    "src/api/routers"
+    "src/api/services"
+    "src/api/models"
+    "src/api/utils"
+    "src/processing"
+    "www/landing/content/blog"
+    "www/landing/content/portfolio"
+    "www/landing/content/about"
+    "www/landing/themes"
+    "www/landing/static"
+    "www/webgis"
+    "www/storymaps"
+    ".github/workflows"
+)
+
+for dir in "${DIRECTORIES[@]}"; do
+    if [ -d "$dir" ]; then
+        echo "ℹ️  A pasta '$dir' já existe. Não foi criada nem alterada."
+        ((existentes++))
+    else
+        mkdir -p "$dir"
+        echo "🆕 Pasta criada: '$dir'"
+        ((criadas++))
+    fi
+done
+
+# Criar ficheiros .gitkeep para garantir que pastas vazias são seguidas pelo git
+echo "📝 A atualizar ficheiros .gitkeep..."
+find . -type d -not -path '*/.*' -empty -exec touch {}/.gitkeep \;
+
+echo "------------------------------------------"
+echo "✅ Verificação concluída!"
+echo "Pastas novas criadas: $criadas"
+echo "Pastas que já existiam: $existentes"
+echo "------------------------------------------"
+
+
+###############################################################################
+# FICHEIRO: bootstrap.sh
+# LOCAL: ./scripts/setup/bootstrap.sh
+###############################################################################
+
+#!/bin/bash
+# ===========================================
+# Script de bootstrap completo
+# ===========================================
+
+set -e
+
+echo "🚀 Iniciando bootstrap do GIS Stack..."
+
+# Verificar se estamos no directório correcto
+if [ ! -f "docker-compose.yml" ]; then
+    echo "❌ Erro: Execute este script na raiz do projecto"
+    exit 1
+fi
+
+# 1. Criar estrutura de directórios
+echo "📁 Criando estrutura de directórios..."
+./scripts/setup/init-dirs.sh
+
+# 2. Verificar .env
+if [ ! -f ".env" ]; then
+    echo "📝 Criando ficheiro .env a partir do exemplo..."
+    cp .env.example .env
+    echo "⚠️  IMPORTANTE: Edite o ficheiro .env com as suas configurações!"
+    echo "   Especialmente: POSTGRES_PASSWORD, API_SECRET_KEY, JUPYTER_TOKEN"
+    read -p "Pressione ENTER depois de editar o .env..."
+fi
+
+# 3. Verificar Docker
+echo "🐳 Verificando Docker..."
+if ! command -v docker &> /dev/null; then
+    echo "❌ Docker não encontrado. Instale primeiro."
+    exit 1
+fi
+
+if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+    echo "❌ Docker Compose não encontrado. Instale primeiro."
+    exit 1
+fi
+
+# 4. Build das imagens
+echo "🔨 Fazendo build das imagens Docker..."
+docker-compose build
+
+# 5. Iniciar serviços core
+echo "🚀 Iniciando serviços core (postgis, nginx, martin, python-api)..."
+docker-compose --profile core up -d
+
+# 6. Aguardar PostGIS
+echo "⏳ Aguardando PostGIS ficar pronto..."
+sleep 10
+until docker-compose exec -T postgis pg_isready -U ${POSTGRES_USER:-gisuser}; do
+    echo "   Aguardando..."
+    sleep 2
+done
+
+# 7. Inicializar base de dados
+echo "🗄️  Inicializando base de dados..."
+./scripts/setup/init-db.sh
+
+# 8. Verificar estado
+echo ""
+echo "✅ Bootstrap completo!"
+echo ""
+echo "Serviços activos:"
+docker-compose ps
+echo ""
+echo "URLs disponíveis:"
+echo "  - Site: https://localhost (ou http://localhost:80)"
+echo "  - API: https://localhost/api"
+echo "  - Tiles: https://localhost/tiles"
+echo ""
+echo "Para iniciar todos os serviços:"
+echo "  docker-compose --profile full up -d"
+echo ""
+echo "Para ver logs:"
+echo "  docker-compose logs -f"
+
+
+###############################################################################
+# FICHEIRO: init-db.sh
+# LOCAL: ./scripts/setup/init-db.sh
+###############################################################################
+
+#!/bin/bash
+# ===========================================
+# Inicializar base de dados
+# ===========================================
+
+set -e
+
+echo "🗄️  Inicializando base de dados..."
+
+# Carregar variáveis
+source .env 2>/dev/null || true
+
+POSTGRES_USER=${POSTGRES_USER:-gisuser}
+POSTGRES_DB=${POSTGRES_DB:-gisdb}
+
+# Verificar se PostGIS está a correr
+if ! docker-compose ps postgis | grep -q "Up"; then
+    echo "❌ PostGIS não está a correr. Execute primeiro:"
+    echo "   docker-compose --profile core up -d postgis"
+    exit 1
+fi
+
+# Executar script de extensões (já corre no entrypoint, mas garantir)
+docker-compose exec -T postgis psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<EOF
+-- Verificar extensões
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_raster;
+CREATE EXTENSION IF NOT EXISTS postgis_topology;
+CREATE EXTENSION IF NOT EXISTS pgrouting;
+
+-- Verificar schemas
+CREATE SCHEMA IF NOT EXISTS raster;
+CREATE SCHEMA IF NOT EXISTS vector;
+CREATE SCHEMA IF NOT EXISTS analysis;
+CREATE SCHEMA IF NOT EXISTS tiles;
+
+-- Tabela de metadados
+CREATE TABLE IF NOT EXISTS public.layer_metadata (
+    id SERIAL PRIMARY KEY,
+    layer_name VARCHAR(255) NOT NULL UNIQUE,
+    schema_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    source VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Função para actualizar updated_at
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS \$\$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+\$\$ LANGUAGE plpgsql;
+
+-- Trigger
+DROP TRIGGER IF EXISTS update_layer_metadata_updated_at ON public.layer_metadata;
+CREATE TRIGGER update_layer_metadata_updated_at
+    BEFORE UPDATE ON public.layer_metadata
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at();
+
+SELECT 'Base de dados inicializada com sucesso!' AS status;
+EOF
+
+echo "✅ Base de dados inicializada!"
+
+
+###############################################################################
+# FICHEIRO: generate-certs.sh
+# LOCAL: ./scripts/setup/generate-certs.sh
+###############################################################################
+
+#!/bin/bash
+# ===========================================
+# Gerar certificados SSL (Let's Encrypt ou self-signed)
+# ===========================================
+
+set -e
+
+source .env 2>/dev/null || true
+
+DOMAIN=${DOMAIN:-localhost}
+CERTS_DIR="./certs/nginx"
+
+echo "🔐 Gerando certificados SSL para: $DOMAIN"
+
+mkdir -p "$CERTS_DIR"
+
+if [ "$DOMAIN" = "localhost" ]; then
+    echo "📝 Gerando certificados self-signed para desenvolvimento..."
+    
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "$CERTS_DIR/privkey.pem" \
+        -out "$CERTS_DIR/fullchain.pem" \
+        -subj "/C=PT/ST=Lisboa/L=Lisboa/O=Dev/CN=localhost"
+    
+    echo "✅ Certificados self-signed criados!"
+    echo "⚠️  Atenção: O browser vai mostrar aviso de segurança (normal para localhost)"
+else
+    echo "🌐 Usando Certbot para Let's Encrypt..."
+    
+    # Verificar se certbot está instalado
+    if ! command -v certbot &> /dev/null; then
+        echo "Instalando certbot..."
+        apt-get update && apt-get install -y certbot
+    fi
+    
+    # Parar nginx temporariamente se estiver a correr
+    docker-compose stop nginx 2>/dev/null || true
+    
+    # Obter certificado
+    certbot certonly --standalone \
+        -d "$DOMAIN" \
+        --email "${ACME_EMAIL:-admin@$DOMAIN}" \
+        --agree-tos \
+        --non-interactive
+    
+    # Copiar certificados
+    cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$CERTS_DIR/"
+    cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$CERTS_DIR/"
+    
+    # Reiniciar nginx
+    docker-compose start nginx 2>/dev/null || true
+    
+    echo "✅ Certificados Let's Encrypt obtidos!"
+    echo "💡 Dica: Configure renovação automática com cron"
+fi
+
+
+---
+
+## 5. Scripts de Cron
+
+###############################################################################
+# FICHEIRO: ipma_weather.py
+# LOCAL: ./scripts/cronjobs/scraping/ipma_weather.py
+###############################################################################
+
+#!/usr/bin/env python3
+"""
+Scraping de dados meteorológicos do IPMA
+Executa a cada 6 horas via cron
+"""
+
+import os
+import httpx
+from datetime import datetime
+from loguru import logger
+import psycopg2
+from psycopg2.extras import execute_values
+
+# Configuração
+DATABASE_URL = os.getenv("DATABASE_URL")
+IPMA_API_BASE = "https://api.ipma.pt/open-data"
+
+# Estações na área de estudo (Médio Tejo)
+STATIONS = [
+    {"id": "1200535", "name": "Tomar"},
+    {"id": "1210705", "name": "Abrantes"},
+]
+
+logger.add("/var/log/cron/ipma.log", rotation="10 MB")
+
+
+def fetch_observations():
+    """Buscar observações actuais do IPMA."""
+    url = f"{IPMA_API_BASE}/observation/meteorology/stations/observations.json"
+    
+    try:
+        response = httpx.get(url, timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.error(f"Erro ao buscar dados IPMA: {e}")
+        return None
+
+
+def save_to_db(observations):
+    """Guardar observações na base de dados."""
+    if not observations:
+        return
+    
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+    
+    # Criar tabela se não existir
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS analysis.ipma_observations (
+            id SERIAL PRIMARY KEY,
+            station_id VARCHAR(20),
+            station_name VARCHAR(100),
+            timestamp TIMESTAMP,
+            temperature FLOAT,
+            humidity FLOAT,
+            precipitation FLOAT,
+            wind_speed FLOAT,
+            wind_direction VARCHAR(10),
+            pressure FLOAT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Inserir dados
+    data = []
+    timestamp = datetime.now()
+    
+    for station in STATIONS:
+        station_data = observations.get(station["id"], {})
+        if station_data:
+            data.append((
+                station["id"],
+                station["name"],
+                timestamp,
+                station_data.get("temperatura"),
+                station_data.get("humidade"),
+                station_data.get("precipitaAcworked"),
+                station_data.get("intensidadeVento"),
+                station_data.get("idDireccVento"),
+                station_data.get("pressao")
+            ))
+    
+    if data:
+        execute_values(cur, """
+            INSERT INTO analysis.ipma_observations 
+            (station_id, station_name, timestamp, temperature, humidity, 
+             precipitation, wind_speed, wind_direction, pressure)
+            VALUES %s
+        """, data)
+        
+        conn.commit()
+        logger.info(f"Guardados {len(data)} registos IPMA")
+    
+    cur.close()
+    conn.close()
+
+
+def main():
+    logger.info("Iniciando scraping IPMA...")
+    observations = fetch_observations()
+    save_to_db(observations)
+    logger.info("Scraping IPMA concluído")
+
+
+if __name__ == "__main__":
+    main()
+
+
+###############################################################################
+# FICHEIRO: snirh_reservoirs.py
+# LOCAL: ./scripts/cronjobs/scraping/snirh_reservoirs.py
+###############################################################################
+
+#!/usr/bin/env python3
+"""
+Scraping de níveis de albufeiras do SNIRH
+Executa diariamente às 7h via cron
+"""
+
+import os
+import httpx
+from datetime import datetime
+from loguru import logger
+import psycopg2
+from bs4 import BeautifulSoup
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+SNIRH_URL = "https://snirh.apambiente.pt/index.php?idMain=1&idItem=7"
+
+# Albufeiras de interesse
+RESERVOIRS = [
+    {"name": "Castelo de Bode", "code": "15L/01A"},
+]
+
+logger.add("/var/log/cron/snirh.log", rotation="10 MB")
+
+
+def fetch_reservoir_data():
+    """Buscar dados de albufeiras do SNIRH."""
+    try:
+        response = httpx.get(SNIRH_URL, timeout=30)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'lxml')
+        # Parsing específico da página SNIRH
+        # (implementação depende da estrutura actual da página)
+        
+        return []  # Placeholder
+    except Exception as e:
+        logger.error(f"Erro ao buscar dados SNIRH: {e}")
+        return None
+
+
+def save_to_db(data):
+    """Guardar níveis na base de dados."""
+    if not data:
+        return
+    
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+    
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS analysis.reservoir_levels (
+            id SERIAL PRIMARY KEY,
+            reservoir_name VARCHAR(100),
+            reservoir_code VARCHAR(20),
+            date DATE,
+            level_m FLOAT,
+            volume_hm3 FLOAT,
+            capacity_percent FLOAT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Inserir dados...
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def main():
+    logger.info("Iniciando scraping SNIRH...")
+    data = fetch_reservoir_data()
+    save_to_db(data)
+    logger.info("Scraping SNIRH concluído")
+
+
+if __name__ == "__main__":
+    main()
+
+
+---
+
+## 6. Scripts Utilitários
+
+###############################################################################
+# FICHEIRO: backup_db.sh
+# LOCAL: ./scripts/utils/backup_db.sh
+###############################################################################
+
+#!/bin/bash
+# ===========================================
+# Backup da base de dados PostgreSQL
+# ===========================================
+
+set -e
+
+source .env 2>/dev/null || true
+
+BACKUP_DIR="./backups"
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="$BACKUP_DIR/gisdb_$DATE.sql.gz"
+
+mkdir -p "$BACKUP_DIR"
+
+echo "🗄️  Iniciando backup da base de dados..."
+
+docker-compose exec -T postgis pg_dump \
+    -U "${POSTGRES_USER:-gisuser}" \
+    -d "${POSTGRES_DB:-gisdb}" \
+    --format=plain \
+    --no-owner \
+    --no-acl \
+    | gzip > "$BACKUP_FILE"
+
+echo "✅ Backup criado: $BACKUP_FILE"
+
+# Manter apenas os últimos 7 backups
+ls -t "$BACKUP_DIR"/gisdb_*.sql.gz | tail -n +8 | xargs -r rm
+
+echo "🧹 Backups antigos removidos (mantidos últimos 7)"
+
+
+###############################################################################
+# FICHEIRO: cleanup_temp.sh
+# LOCAL: ./scripts/utils/cleanup_temp.sh
+###############################################################################
+
+#!/bin/bash
+# ===========================================
+# Limpar ficheiros temporários
+# ===========================================
+
+echo "🧹 Limpando ficheiros temporários..."
+
+# Limpar pasta temp
+find ./data/shared/temp -type f -mtime +7 -delete 2>/dev/null || true
+
+# Limpar logs antigos (mais de 30 dias)
+find ./logs -name "*.log" -mtime +30 -delete 2>/dev/null || true
+find ./logs -name "*.gz" -mtime +30 -delete 2>/dev/null || true
+
+# Limpar __pycache__
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+# Limpar .ipynb_checkpoints
+find . -type d -name ".ipynb_checkpoints" -exec rm -rf {} + 2>/dev/null || true
+
+echo "✅ Limpeza concluída"
+
+
+###############################################################################
+# FICHEIRO: health_check.sh
+# LOCAL: ./scripts/utils/health_check.sh
+###############################################################################
+
+#!/bin/bash
+# ===========================================
+# Verificar estado dos serviços
+# ===========================================
+
+echo "🏥 Verificando estado dos serviços..."
+echo ""
+
+# PostGIS
+echo -n "PostGIS: "
+if docker-compose exec -T postgis pg_isready -U gisuser > /dev/null 2>&1; then
+    echo "✅ OK"
+else
+    echo "❌ ERRO"
+fi
+
+# Nginx
+echo -n "Nginx: "
+if curl -s -o /dev/null -w "%{http_code}" http://localhost | grep -q "200\|301\|302"; then
+    echo "✅ OK"
+else
+    echo "❌ ERRO"
+fi
+
+# Martin
+echo -n "Martin: "
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health | grep -q "200"; then
+    echo "✅ OK"
+else
+    echo "⚠️  N/A ou ERRO"
+fi
+
+# API
+echo -n "API: "
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health | grep -q "200"; then
+    echo "✅ OK"
+else
+    echo "⚠️  N/A ou ERRO"
+fi
+
+# TiTiler
+echo -n "TiTiler: "
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/healthz | grep -q "200"; then
+    echo "✅ OK"
+else
+    echo "⚠️  N/A ou ERRO"
+fi
+
+echo ""
+echo "📊 Uso de recursos:"
+docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" 2>/dev/null || echo "N/A"
+
+
+---
+
+## Histórico de Versões
+
+| Data | Versão | Alterações |
+|------|--------|------------|
+| 2025-01-30 | 1.0 | Criação inicial com todos os ficheiros base |
+
+---
+
+## Documentos Relacionados
+
+- `01_STACK_TECNICO.md` - Descrição detalhada do stack
+- `02_ESTRUTURA_FICHEIROS.md` - Estrutura de directórios
+
+---
+
+*Documento gerado a partir de conversa de planeamento. Última actualização: Janeiro 2025*
