@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Configuração
+# Configuração - Confirma se o nome do ficheiro está correto!
 INPUT_MD="docs/claude/02_ESTRUTURA_FICHEIROS.md"
 START_MARKER="## 2. Estrutura Completa"
 
@@ -22,13 +22,19 @@ criadas=0
 existentes=0
 git_files=0
 
-# Extração da lista
-items=$(sed -n "/$START_MARKER/,/^\s*$/p" "$INPUT_MD" | \
+# Extração melhorada: Pega em tudo o que começa com os caracteres da árvore │ ├ └
+# Independentemente de haver linhas em branco depois.
+items=$(sed -n "/$START_MARKER/,/###/p" "$INPUT_MD" | \
         grep -E '^[│ ├└─]+' | \
         sed -E 's/^[│ ├└─]+//g' | \
         sed 's/^[ \t]*//;s/[ \t]*$//' | \
         grep -v "gis-docker-stack/" | \
         grep -vE '^\.git($|hub)')
+
+# Se a lista continuar vazia, avisa o utilizador
+if [ -z "$items" ]; then
+    echo -e "⚠️  ${YELLOW}Aviso: Não foram detectados itens na árvore. Verifica se o marcador '$START_MARKER' existe no ficheiro.${NC}"
+fi
 
 for item in $items; do
     [ -z "$item" ] && continue
