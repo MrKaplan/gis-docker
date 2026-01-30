@@ -1,32 +1,106 @@
-# ========== DADOS (volumes Docker) ==========
-/data/postgis/**
-/data/redis/**
-/data/qgis/projects/**
-/data/jupyter/notebooks/**
-/data/shared/**
-/data/downloads/**
-/data/temp/**
-
-# ========== LOGS ==========
-/logs/**
-
-# ========== SEGURANÇA ==========
+# ===========================
+# Ambiente e Secrets
+# ===========================
 .env
 .env.local
-/config/nginx/certs/**
+.env.*.local
+*.pem
+*.key
 
-# ========== DESENVOLVIMENTO ==========
-docker-compose.override.yml
-.vscode/
-.DS_Store
+# ===========================
+# Dados (demasiado grandes)
+# ===========================
+data/postgis/*
+!data/postgis/.gitkeep
+
+data/redis/*
+!data/redis/.gitkeep
+
+data/shared/raster/*
+!data/shared/raster/.gitkeep
+!data/shared/raster/mdt/.gitkeep
+
+data/shared/vector/*
+!data/shared/vector/.gitkeep
+
+data/shared/downloads/*
+!data/shared/downloads/.gitkeep
+
+data/shared/temp/*
+!data/shared/temp/.gitkeep
+
+# ===========================
+# Logs
+# ===========================
+logs/**/*.log
+!logs/.gitkeep
+
+# ===========================
+# Python
+# ===========================
 __pycache__/
-*.pyc
-.pytest_cache/
-.idea/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+.eggs/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# ========== IDE ==========
+# ===========================
+# Jupyter
+# ===========================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ===========================
+# IDE
+# ===========================
+.idea/
+.vscode/
 *.swp
 *.swo
 *~
-.sublime-project
-.sublime-workspace
+
+# ===========================
+# OS
+# ===========================
+.DS_Store
+Thumbs.db
+
+# ===========================
+# Outputs grandes
+# ===========================
+*.tif
+*.tiff
+*.gpkg
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+!projects/**/outputs/.gitkeep
+
+# ===========================
+# Modelos 3D
+# ===========================
+*.stl
+*.obj
+*.fbx
+
+# ===========================
+# Hugo
+# ===========================
+www/*/public/
+www/*/resources/
+
+# ===========================
+# Certificados
+# ===========================
+certs/**/*.pem
+certs/**/*.key
+!certs/**/.gitkeep
