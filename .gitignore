@@ -1,0 +1,32 @@
+# ========== DADOS (volumes Docker) ==========
+/data/postgis/**
+/data/redis/**
+/data/qgis/projects/**
+/data/jupyter/notebooks/**
+/data/shared/**
+/data/downloads/**
+/data/temp/**
+
+# ========== LOGS ==========
+/logs/**
+
+# ========== SEGURANÇA ==========
+.env
+.env.local
+/config/nginx/certs/**
+
+# ========== DESENVOLVIMENTO ==========
+docker-compose.override.yml
+.vscode/
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.idea/
+
+# ========== IDE ==========
+*.swp
+*.swo
+*~
+.sublime-project
+.sublime-workspace
